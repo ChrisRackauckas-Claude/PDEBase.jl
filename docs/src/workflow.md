@@ -257,6 +257,6 @@ Implement these in your discretization to provide helpful error messages.
 
 ## See Also
 
-- [Developer Extension API](@ref developer-extension-api) for interface function details
+- [Developer Extension API](interface.md) for interface function details
 - [VariableMap](@ref variablemap) for variable handling
 - [Boundary Conditions](@ref boundaries) for boundary types

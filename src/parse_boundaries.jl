@@ -28,6 +28,10 @@ abstract type AbstractInterfaceBoundary <: AbstractTruncatingBoundary end
 
 Represents a boundary condition at the lower boundary of a domain.
 
+The public fields describe the boundary after PDEBase has matched the input
+condition to a dependent variable and spatial coordinate. Construct instances
+through `LowerBoundary(u, t, x, order, eq, v)` while parsing a `PDESystem`.
+
 # Fields
 - `u`: The dependent variable
 - `x`: The independent variable at this boundary
@@ -35,6 +39,23 @@ Represents a boundary condition at the lower boundary of a domain.
 - `indvars`: All independent variables involved in the boundary condition
 - `eq`: The boundary condition equation
 - `order`: The order of the derivative in the boundary condition
+
+# Arguments
+- `u`: The dependent-variable expression at the boundary.
+- `t`: The time variable, or `nothing` for a steady-state system.
+- `x`: The independent variable whose lower endpoint is represented.
+- `order`: The derivative order associated with the boundary condition.
+- `eq`: The symbolic boundary equation.
+- `v::VariableMap`: The variable map used to reconstruct dependent variables.
+
+# Returns
+- `LowerBoundary`: A normalized boundary representation.
+
+# Examples
+```julia
+boundary = LowerBoundary(u(t, 0), t, x, 0, u(t, 0) ~ 0, v)
+boundary.x == x
+```
 """
 struct LowerBoundary <: AbstractTruncatingBoundary
     u::Any
@@ -63,6 +84,9 @@ end
 
 Represents a boundary condition at the upper boundary of a domain.
 
+Construct instances through `UpperBoundary(u, t, x, order, eq, v)` while
+parsing a `PDESystem`.
+
 # Fields
 - `u`: The dependent variable
 - `x`: The independent variable at this boundary
@@ -70,6 +94,23 @@ Represents a boundary condition at the upper boundary of a domain.
 - `indvars`: All independent variables involved in the boundary condition
 - `eq`: The boundary condition equation
 - `order`: The order of the derivative in the boundary condition
+
+# Arguments
+- `u`: The dependent-variable expression at the boundary.
+- `t`: The time variable, or `nothing` for a steady-state system.
+- `x`: The independent variable whose upper endpoint is represented.
+- `order`: The derivative order associated with the boundary condition.
+- `eq`: The symbolic boundary equation.
+- `v::VariableMap`: The variable map used to reconstruct dependent variables.
+
+# Returns
+- `UpperBoundary`: A normalized boundary representation.
+
+# Examples
+```julia
+boundary = UpperBoundary(u(t, 1), t, x, 0, u(t, 1) ~ 0, v)
+boundary.x == x
+```
 """
 struct UpperBoundary <: AbstractTruncatingBoundary
     u::Any
@@ -101,6 +142,10 @@ end
 
 Represents a boundary condition at an interface between two regions or subdomains.
 
+Use the ordinary five-field constructor after the two sides have been
+classified. The type parameters record whether each side is at its upper
+endpoint; they are `Val` types so dispatch can use the orientation.
+
 # Type Parameters
 - `IsUpper_u`: `Val{true}` if the first variable is at the upper boundary, `Val{false}` otherwise
 - `IsUpper_u2`: `Val{true}` if the second variable is at the upper boundary, `Val{false}` otherwise
@@ -116,6 +161,20 @@ Represents a boundary condition at an interface between two regions or subdomain
 It is assumed that the variables in an interface boundary condition have the same argument
 signature, differing in only one variable which defines the interface. This assumption is
 not validated but will cause errors if violated.
+
+# Arguments
+- `u`, `u2`: Dependent-variable expressions on the two sides.
+- `x`, `x2`: The interface coordinates on the two sides.
+- `eq`: The symbolic interface equation.
+
+# Returns
+- `InterfaceBoundary`: An orientation-aware interface condition.
+
+# Examples
+```julia
+boundary = InterfaceBoundary{Val(true), Val(false)}(u, u2, x, x2, u ~ u2)
+isinterface(boundary) == Val(true)
+```
 """
 struct InterfaceBoundary{IsUpper_u, IsUpper_u2} <: AbstractInterfaceBoundary
     u::Any
@@ -134,6 +193,10 @@ Higher-order interface boundary conditions involve derivatives and are handled d
 from simple interface conditions. These are typically flux conditions or derivative matching
 conditions at interfaces.
 
+Construct instances through `HigherOrderInterfaceBoundary(u, u2, x, x2, t,
+order, eq, v)` so the dependent and independent variable fields are normalized
+from `eq`.
+
 # Fields
 - `u`: The first dependent variable at the interface
 - `u2`: The second dependent variable at the interface
@@ -143,6 +206,17 @@ conditions at interfaces.
 - `indvars`: All independent variables involved in the boundary condition
 - `eq`: The interface boundary condition equation
 - `order`: The maximum order of derivatives in the boundary condition
+
+# Arguments
+- `u`, `u2`: Dependent-variable expressions on the two sides.
+- `x`, `x2`: The interface coordinates on the two sides.
+- `t`: The time variable, or `nothing` for a steady-state system.
+- `order`: The maximum derivative order represented by `eq`.
+- `eq`: The symbolic interface equation.
+- `v::VariableMap`: The variable map used to reconstruct dependent variables.
+
+# Returns
+- `HigherOrderInterfaceBoundary`: A normalized higher-order interface.
 """
 struct HigherOrderInterfaceBoundary <: AbstractInterfaceBoundary
     u::Any
@@ -184,6 +258,17 @@ end
 
 Return the dependent variable and independent boundary variable represented by
 boundary object `b`.
+
+# Arguments
+- `b::AbstractBoundary`: A lower, upper, or interface boundary.
+
+# Returns
+- `Tuple`: `(b.u, b.x)`.
+
+# Examples
+```julia
+u_at_boundary, x = getvars(boundary)
+```
 """
 getvars(b::AbstractBoundary) = (b.u, b.x)
 
@@ -192,6 +277,12 @@ getvars(b::AbstractBoundary) = (b.u, b.x)
 
 Return `true` when interface boundaries `b1` and `b2` form matching periodic
 boundary conditions.
+
+# Arguments
+- `b1`, `b2`: Interface boundaries to compare.
+
+# Returns
+- `Bool`: Whether the variable operations and interface coordinates are paired.
 """
 function isperiodic(
         b1::InterfaceBoundary{b1u, b1u2},
@@ -207,6 +298,12 @@ end
     isinterface(b)
 
 Return `Val(true)` when `b` is an `InterfaceBoundary`, otherwise `Val(false)`.
+
+# Arguments
+- `b`: A boundary representation.
+
+# Returns
+- `Val{true}` for `InterfaceBoundary` and `Val{false}` otherwise.
 """
 @inline function isinterface(b)
     if b isa InterfaceBoundary
@@ -220,6 +317,12 @@ end
     filter_interfaces(bs)
 
 Return the interface boundaries contained in the collection `bs`.
+
+# Arguments
+- `bs`: An iterable of boundary representations.
+
+# Returns
+- A vector containing only `InterfaceBoundary` values.
 """
 filter_interfaces(bs) = filter(b -> b isa InterfaceBoundary, bs)
 
@@ -228,6 +331,13 @@ filter_interfaces(bs) = filter(b -> b isa InterfaceBoundary, bs)
 
 Return booleans indicating whether interface boundaries in `bs` include lower
 and upper boundaries for independent variable `x`.
+
+# Arguments
+- `bs`: An iterable of boundary representations.
+- `x`: The independent variable to inspect.
+
+# Returns
+- `Tuple{Bool, Bool}`: `(has_lower, has_upper)`.
 """
 function haslowerupper(bs, x)
     haslower = false
@@ -249,6 +359,13 @@ end
 
 Return `true` when a nested boundary map contains at least one
 `InterfaceBoundary`.
+
+# Arguments
+- `bmps`: A nested boundary map indexed by dependent variable and independent
+  variable.
+
+# Returns
+- `Bool`: Whether at least one interface boundary is present.
 """
 function has_interfaces(bmps)
     return any(b -> b isa InterfaceBoundary, reduce(vcat, reduce(vcat, collect.(values.(collect(values(bmps)))))))
@@ -260,6 +377,12 @@ end
 
 Return `true` when boundary object `b` corresponds to the upper side of a
 domain or interface.
+
+# Arguments
+- `b`: A boundary representation.
+
+# Returns
+- `Bool`: Whether `b` is oriented to the upper side.
 """
 isupper(::LowerBoundary) = false
 isupper(::UpperBoundary) = true
@@ -272,6 +395,18 @@ isupper(::HigherOrderInterfaceBoundary) = true
     flatten_vardict(bmps)
 
 Flatten a nested boundary map into a vector of boundary objects.
+
+# Arguments
+- `bmps`: A nested boundary map indexed by dependent variable and independent
+  variable.
+
+# Returns
+- `Vector`: All boundary objects in the map, preserving map traversal order.
+
+# Examples
+```julia
+boundaries = flatten_vardict(boundarymap)
+```
 """
 flatten_vardict(bmps) = reduce(vcat, reduce(vcat, collect.(values.(collect(values(bmps))))))
 

@@ -3,6 +3,10 @@
 
 A container that maps dependent and independent variables from a `PDESystem` along with their properties.
 
+`VariableMap` is created during `SciMLBase.symbolic_discretize` and is passed to
+discretizer hooks. `VariableMap(pdesys)` is useful when a package needs to
+inspect the symbolic variables without selecting a discretization.
+
 # Fields
 - `ū`: Collection of all dependent variables (filtered to exclude boundary values)
 - `x̄`: Collection of spatial independent variables (excludes time)
@@ -14,6 +18,20 @@ A container that maps dependent and independent variables from a `PDESystem` alo
 - `x2i`: Dictionary mapping independent variables to their dimension indices
 - `i2x`: Dictionary mapping dimension indices to independent variables
 - `replaced_vars`: Dictionary of variable substitutions/replacements
+
+# Constructors
+- `VariableMap(pdesys)`: Build a map without a discretization.
+- `VariableMap(pdesys, disc; replaced_vars = Dict())`: Build a map for `disc`.
+
+# Returns
+- `VariableMap`: The normalized variable and domain information used by PDEBase.
+
+# Examples
+```julia
+v = VariableMap(pdesys)
+depvars(v)
+indvars(v)
+```
 """
 struct VariableMap
     ū::Any

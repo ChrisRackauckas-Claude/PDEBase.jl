@@ -25,6 +25,9 @@ using TermInterface: maketerm, metadata
 
 Supertype for discretizations that lower a `PDESystem` into an equation-based
 SciML system, typically an `ODESystem` or `DAESystem`.
+
+Discretizer packages subtype this type and implement the developer extension
+hooks documented in the [Developer Extension API](@ref developer_extension_api).
 """
 abstract type AbstractEquationSystemDiscretization <: AbstractDiscretization end
 
@@ -33,6 +36,9 @@ abstract type AbstractEquationSystemDiscretization <: AbstractDiscretization end
 
 Supertype for discretizations that lower a `PDESystem` into an optimization
 system.
+
+Use this type when the generated system is consumed by an optimization problem
+rather than by an ODE or DAE solver.
 """
 abstract type AbstractOptimizationSystemDiscretization <: AbstractDiscretization end
 
@@ -41,6 +47,9 @@ abstract type AbstractOptimizationSystemDiscretization <: AbstractDiscretization
 
 Supertype for discretized spatial domain representations produced from a
 `PDESystem` and a discretization.
+
+Concrete spaces are returned by `construct_discrete_space` and are passed to
+the remaining discretization hooks.
 """
 abstract type AbstractDiscreteSpace end
 
@@ -49,6 +58,9 @@ abstract type AbstractDiscreteSpace end
 
 Supertype for discrete space representations whose coordinates form a
 Cartesian product grid.
+
+Subtype this type when `x2i` and Cartesian indexing describe the spatial
+coordinates without a general mesh connectivity object.
 """
 abstract type AbstractCartesianDiscreteSpace <: AbstractDiscreteSpace end
 
@@ -57,6 +69,9 @@ abstract type AbstractCartesianDiscreteSpace <: AbstractDiscreteSpace end
 
 Supertype for mappings that assign dependent variables and boundary conditions
 to the equations used to discretize them.
+
+Concrete mappings are returned by `construct_var_equation_mapping`; their
+`get_eqvar` method must identify the discrete variable for every PDE.
 """
 abstract type AbstractVarEqMapping end
 
@@ -65,6 +80,9 @@ abstract type AbstractVarEqMapping end
 
 Supertype for objects that hold the data needed to discretize differential
 operators on a discrete space.
+
+Concrete derivative data is returned by `construct_differential_discretizer`
+and consumed by `discretize_equation!`.
 """
 abstract type AbstractDifferentialDiscretizer end
 
@@ -73,6 +91,9 @@ abstract type AbstractDifferentialDiscretizer end
 
 Supertype for mutable state accumulated while PDE equations and boundary
 conditions are discretized.
+
+Concrete state is returned by `construct_disc_state` and is updated in place by
+`discretize_equation!` before `generate_system` consumes it.
 """
 abstract type AbstractDiscretizationState end
 

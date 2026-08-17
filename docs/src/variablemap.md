@@ -199,5 +199,5 @@ Returns axis values at grid positions. Used internally during discretization.
 
 ## See Also
 
-- [Developer Extension API](@ref developer-extension-api) for how VariableMap is used in discretization
+- [Developer Extension API](interface.md) for how VariableMap is used in discretization
 - [Boundary Conditions](@ref boundaries) for how boundaries reference variables
