@@ -11,6 +11,18 @@ This implementation manually traverses the expression tree and:
 - DOES substitute inside the arguments of derivative calls like `Dx(u(t,x))`
 
 This allows expressions like `Dx(u(t, boundary_value))` to work correctly.
+
+# Arguments
+- `expr`: The symbolic expression to transform.
+- `dict`: An iterable of substitution pairs.
+
+# Returns
+- A symbolic expression with the requested substitutions applied.
+
+# Examples
+```julia
+pde_substitute(u(t, x), Dict(x => 0))
+```
 """
 @inline function pde_substitute(expr, dict)
     return _pde_sub(safe_unwrap(expr), Dict(safe_unwrap(k) => safe_unwrap(v) for (k, v) in pairs(dict)))
@@ -109,6 +121,11 @@ Returns a set of all differential orders present in the equation with respect to
 
 # Returns
 A set of integers representing all differential orders found in the equation (excluding zero).
+
+# Examples
+```julia
+differential_order(Dx(Dx(u)) ~ 0, x) == Set([2])
+```
 """
 function differential_order(eq, x)
     orders = Set{Int}()
@@ -170,6 +187,11 @@ Finds the first `Differential` operator or dependent variable matching `depvar_o
 
 # Returns
 The first matching derivative or dependent variable found, or `nothing` if none exists.
+
+# Examples
+```julia
+find_derivative(Dx(u) + 1, operation(u)) == Dx(u)
+```
 """
 function find_derivative(term, depvar_op)
     if iscall(term)
@@ -196,6 +218,15 @@ Applies substitution rules to all equations and boundary conditions in place.
 - `eqs`: Vector of equations to modify
 - `bcs`: Vector of boundary conditions to modify
 - `rules`: Substitution rules to apply
+
+# Returns
+- `eqs`: The mutated equation vector.
+
+# Examples
+```julia
+eqs = [u ~ x]
+subs_alleqs!(eqs, [x => 1])
+```
 """
 function subs_alleqs!(eqs, bcs, rules)
     subs_alleqs!(eqs, rules)
@@ -217,6 +248,11 @@ Finds all dependent variables matching the given operations in an expression.
 
 # Returns
 A set of all dependent variables found in the expression that match the given operations.
+
+# Examples
+```julia
+get_depvars(Dx(u) ~ u, [operation(u)])
+```
 """
 function get_depvars(eq, depvar_ops)
     depvars = Set()
@@ -284,6 +320,13 @@ end
 
 Return all dependent variables with operations in `depvar_ops` that appear in
 the equations or boundary conditions.
+
+# Arguments
+- `pdeeqs` or `pdesys::PDESystem`: Equations, or a PDE system containing them.
+- `depvar_ops`: Operations identifying dependent variables.
+
+# Returns
+- A vector of matching dependent-variable expressions.
 """
 @inline function get_all_depvars(pdeeqs, depvar_ops)
     return collect(
@@ -308,6 +351,19 @@ get_ops(depvars) = map(u -> operation(safe_unwrap(u)), depvars)
 
 Split an equation or boundary condition into symbolic terms used by PDE
 discretization rules.
+
+# Arguments
+- `eq`: An `Equation` or initial-condition `Pair`.
+- `x̄`: Optional spatial-variable collection used by the derivative-aware
+  method.
+
+# Returns
+- A vector of symbolic terms extracted from both sides of `eq`.
+
+# Examples
+```julia
+split_terms(u + Dx(u) ~ 0)
+```
 """
 function split_terms(eq::Equation)
     lhs = _split_terms(eq.lhs)
@@ -424,6 +480,18 @@ end
     split_additive_terms(eq)
 
 Return the left- and right-hand additive terms of equation `eq`.
+
+# Arguments
+- `eq`: A symbolic equation with `lhs` and `rhs` fields.
+
+# Returns
+- A vector containing additive terms from the left-hand side followed by
+  additive terms from the right-hand side.
+
+# Examples
+```julia
+split_additive_terms(u + x ~ 2u) == [u, x, 2u]
+```
 """
 function split_additive_terms(eq)
     # Calling the methods from symbolicutils matches the expressions
@@ -453,6 +521,13 @@ end
     subsmatch(expr, rule)
 
 Return `true` when `rule.first` appears anywhere in expression `expr`.
+
+# Arguments
+- `expr`: An equation or symbolic expression to search.
+- `rule`: A pair whose first element is the expression to match.
+
+# Returns
+- `Bool`: Whether the expression occurs in `expr`.
 """
 subsmatch(eq::Equation, rule) = subsmatch(eq.lhs, rule) | subsmatch(eq.rhs, rule)
 
@@ -473,6 +548,18 @@ end
 
 Convert a Term to a variable `Term`. Note that it only takes a `Term`
 not a `Num`.
+
+# Arguments
+- `term`: The symbolic term to replace.
+- `v::VariableMap`: The variable map used to identify dependent variables.
+
+# Returns
+- A new symbolic variable with the same argument signature as the selected
+  dependent variable, or `term` if it is not a call expression.
+
+# Examples
+```julia
+ex2term(Dx(u), v)
 ```
 """
 function ex2term(term, v)
@@ -497,6 +584,17 @@ safe_unwrap(x) = x isa Num ? unwrap(x) : x
     recursive_unwrap(ex)
 
 Recursively unwrap `Num` values inside a symbolic expression.
+
+# Arguments
+- `ex`: A symbolic expression, possibly containing nested `Num` wrappers.
+
+# Returns
+- The expression with wrappers removed recursively.
+
+# Examples
+```julia
+recursive_unwrap(u(x))
+```
 """
 function recursive_unwrap(ex)
     if !iscall(ex)

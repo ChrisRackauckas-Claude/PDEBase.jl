@@ -1,101 +1,115 @@
-# [Developer Extension API](@id developer-extension-api)
+# [Developer Extension API](@id developer_extension_api)
 
-PDEBase.jl provides the versioned interface that discretization packages implement to convert a `ModelingToolkit.PDESystem` into a discretized system (typically an `ODESystem` or `OptimizationSystem`).
+PDEBase defines a small, versioned protocol for packages that discretize a
+`ModelingToolkit.PDESystem`. The protocol turns symbolic equations and boundary
+conditions into a symbolic ODE, DAE, or optimization system. It is an extension
+API for discretizer authors, not an application-level solver API.
 
-!!! warning "Developer API, not ordinary user API"
+!!! warning "Developer API"
 
-    These qualified hooks are for PDE discretizer authors. They are documented
-    and versioned so extension packages can depend on them, but applications
-    should use a discretizer such as MethodOfLines.jl rather than call or
-    extend this protocol directly.
+    The functions on this page are public so that discretizer packages can
+    extend them. Ordinary applications should call a discretizer such as
+    MethodOfLines.jl and should not build a solver directly on these hooks.
+    Extension packages should preserve the call order and return contracts below.
 
-## Key Assumptions about PDESystem
+## Contract
 
-When working with PDEBase.jl, the following assumptions are made about the input `PDESystem`:
+The generic pipeline calls the hooks in this order:
 
-### Domain Requirements
-- The PDESystem must have a well-defined domain with intervals for all independent variables
-- Domain boundaries must be finite (using `DomainSets.jl` interval notation)
-- Each independent variable must have exactly one domain interval defined
+1. `VariableMap(pdesys, discretization)` normalizes symbolic variables and
+   domains.
+2. `interface_errors` rejects unsupported systems before work is allocated.
+3. `parse_bcs` creates the boundary map, then `check_boundarymap` validates it.
+4. `should_transform` optionally enables `transform_pde_system!`.
+5. `construct_disc_state`, `construct_discrete_space`, and
+   `construct_var_equation_mapping` create the discretizer state.
+6. `construct_differential_discretizer` precomputes derivative data.
+7. For each PDE, `get_eqvar` selects its discrete variable and
+   `discretize_equation!` updates the state in place.
+8. `generate_ic_defaults` creates discrete initial values.
+9. `generate_metadata` stores data needed by the generated problem and solution.
+10. `generate_system` constructs the final symbolic system.
 
-### Variable Requirements
-- **Dependent variables** (e.g., `u(t,x,y)`) are functions of independent variables
-- **Independent variables** include spatial variables (e.g., `x`, `y`, `z`) and optionally a time variable
-- All dependent variables appearing in equations must be registered in the PDESystem
-- Variable arguments must be consistent across all uses (e.g., `u(t,x)` cannot appear as `u(x,t)` elsewhere)
+The default methods are intentionally conservative no-ops. A production
+discretizer must override the hooks that construct its space, map, derivative
+data, equations, metadata, and final system. A hook should return only the value
+specified in its docstring; in-place hooks should mutate their supplied state
+and return `nothing`.
 
-### Equation Requirements
-- The system must include PDEs (partial differential equations) as the main equations
-- Boundary conditions must be specified for all spatial boundaries
-- Initial conditions are required if the system is time-dependent
-- All boundary conditions must be defined at the domain boundaries (not in the interior)
+## Input Rules
 
-### Boundary Condition Requirements
-- Each dependent variable must have boundary conditions for each spatial dimension
-- Boundary conditions must evaluate on the lower or upper bound of each spatial domain
-- Interface conditions (connecting multiple regions) must be properly structured
-- Periodic boundary conditions must appear in pairs (lower and upper)
+The `PDESystem` supplied to the protocol is expected to satisfy these rules:
+
+- Every independent variable has one finite domain interval.
+- Dependent variables use a consistent argument order throughout equations and
+  boundary conditions.
+- Every spatial boundary required by the discretizer is represented in the
+  boundary conditions.
+- Time-dependent systems provide initial conditions on the time variable.
+- Periodic conditions occur as matching lower/upper pairs.
+- Interface conditions connect variables with compatible argument signatures;
+  only the interface coordinate may differ.
+
+`VariableMap` excludes time from `indvars(v)` but retains it in `all_ivs(v)` and
+in each dependent variable's argument signature. A discretizer should use the
+accessors rather than infer dimension order from a field layout.
 
 ## Abstract Types
 
-PDEBase.jl defines several abstract types that discretization packages should subtype:
-
-### Discretization Types
-
-```julia
-abstract type AbstractEquationSystemDiscretization <: AbstractDiscretization end
-```
-Use this as a supertype for discretizations that produce systems of ODEs or DAEs.
+Discretizers should subtype one of the output categories and the supporting
+abstract types as appropriate:
 
 ```julia
-abstract type AbstractOptimizationSystemDiscretization <: AbstractDiscretization end
+struct MyDiscretization <: PDEBase.AbstractEquationSystemDiscretization
+    kwargs::NamedTuple
+end
+
+struct MySpace <: PDEBase.AbstractCartesianDiscreteSpace
+    grid::Vector{Float64}
+end
+
+struct MyMapping <: PDEBase.AbstractVarEqMapping
+    equation_variables::Dict
+end
+
+struct MyDerivativeData <: PDEBase.AbstractDifferentialDiscretizer
+    weights::Dict
+end
+
+struct MyState <: PDEBase.AbstractDiscretizationState
+    equations::Vector
+end
 ```
-Use this for discretizations targeting optimization problems (e.g., optimal control).
 
-### Space Representation Types
+`AbstractEquationSystemDiscretization` is for ODE/DAE-like symbolic systems;
+`AbstractOptimizationSystemDiscretization` is for optimization systems.
+`AbstractDiscreteSpace`, `AbstractVarEqMapping`,
+`AbstractDifferentialDiscretizer`, and `AbstractDiscretizationState` describe
+the values exchanged by the protocol and are intentionally free of concrete
+mesh or solver assumptions.
 
-```julia
-abstract type AbstractDiscreteSpace end
-abstract type AbstractCartesianDiscreteSpace <: AbstractDiscreteSpace end
-```
-These represent the discretized spatial domain. `AbstractCartesianDiscreteSpace` is for regular Cartesian grids.
+## Validation and Transformation
 
-### Auxiliary Types
-
-```julia
-abstract type AbstractVarEqMapping end
-```
-Maps variables to the equations they are solved from.
-
-```julia
-abstract type AbstractDifferentialDiscretizer end
-```
-Stores information needed to discretize differential operators.
-
-```julia
-abstract type AbstractDiscretizationState end
-```
-Holds mutable state during the discretization process.
-
-## Interface Functions to Implement
-
-To create a new discretization package, you must implement the following interface functions. Default implementations are provided that return `nothing`, but most must be overridden for a functional discretizer.
-
-### Validation Functions
+These hooks run before equation generation. Validation hooks should throw a
+domain-specific error for unsupported input and return `nothing` for valid
+input. `should_transform` must be a pure decision for the supplied system;
+`transform_pde_system!` is called only when it returns `true` and must return the
+system consumed by later hooks.
 
 ```@docs
 PDEBase.interface_errors
 PDEBase.check_boundarymap
-```
-
-### Transformation Functions
-
-```@docs
 PDEBase.should_transform
 PDEBase.transform_pde_system!
 ```
 
-### Construction Functions
+## Construction
+
+Construction hooks establish the values shared by every equation visit. The
+mapping returned by `construct_var_equation_mapping` must support
+`get_eqvar` for every PDE, and the derivative data returned by
+`construct_differential_discretizer` must support every derivative order listed
+in `orders`.
 
 ```@docs
 PDEBase.construct_disc_state
@@ -104,21 +118,24 @@ PDEBase.construct_var_equation_mapping
 PDEBase.construct_differential_discretizer
 ```
 
-### Discretization Functions
+## Equation and Finalization Hooks
+
+`discretize_equation!` is the only per-equation hook. It should append or mutate
+the state and leave system construction to `generate_system`. The finalization
+hooks should keep the metadata and initial-value representations consistent;
+`generate_system` receives the `checks` keyword and should forward it to the
+symbolic system constructor.
 
 ```@docs
 PDEBase.discretize_equation!
 PDEBase.generate_ic_defaults
-```
-
-### Finalization Functions
-
-```@docs
 PDEBase.generate_metadata
 PDEBase.generate_system
 ```
 
-### Utility Functions
+## Accessor Hooks
+
+These accessors keep downstream packages independent of concrete field names:
 
 ```@docs
 PDEBase.get_time
@@ -127,68 +144,42 @@ PDEBase.get_eqvar
 PDEBase.add_metadata!
 ```
 
-## Implementation Example
+## Minimal Implementation
 
-Here is a minimal skeleton for implementing a new discretization:
+The following skeleton shows the intended generic dispatch. A real package must
+also implement the numerical work inside `discretize_equation!` and construct a
+concrete symbolic system in `generate_system`.
 
 ```julia
-using PDEBase, ModelingToolkit, SciMLBase
+using PDEBase
 
-# Define your discretization type
 struct MyDiscretization <: PDEBase.AbstractEquationSystemDiscretization
-    dx::Float64  # grid spacing
-    # ... other parameters
+    time::Any
 end
 
-# Define your discrete space
-struct MyDiscreteSpace <: PDEBase.AbstractCartesianDiscreteSpace
+struct MySpace <: PDEBase.AbstractCartesianDiscreteSpace
     grid::Vector{Float64}
-    vars::Dict
-    # ... other fields
 end
 
-# Implement required interface functions
-function PDEBase.construct_discrete_space(v::PDEBase.VariableMap, disc::MyDiscretization)
-    # Build the discrete grid and variables
-    # ...
-    return MyDiscreteSpace(grid, vars)
+PDEBase.get_time(disc::MyDiscretization) = disc.time
+PDEBase.construct_discrete_space(v, ::MyDiscretization) = MySpace(collect(0:0.1:1))
+
+function PDEBase.construct_var_equation_mapping(eqs, bmap, space::MySpace,
+        disc::MyDiscretization)
+    return MyMapping(Dict(eq => space.grid for eq in eqs))
 end
 
-function PDEBase.discretize_equation!(
-    disc_state,
-    pde::Equation,
-    vareqmap,
-    eqvar,
-    bcmap,
-    depvars,
-    s::MyDiscreteSpace,
-    derivweights,
-    indexmap,
-    disc::MyDiscretization
-)
-    # Convert the PDE to discretized equations
-    # Add equations to disc_state
-    # ...
-end
-
-function PDEBase.generate_system(
-    disc_state,
-    s::MyDiscreteSpace,
-    u0,
-    tspan,
-    metadata,
-    disc::MyDiscretization
-)
-    # Combine all equations into an ODESystem or similar
-    # Extract time variable and build system
-    t = PDEBase.get_time(disc)
-    # eqs = ... (build equations from disc_state)
-    return ODESystem(eqs, t; name=:discretized)
+function PDEBase.discretize_equation!(state, pde, mapping, eqvar, bcmap,
+        depvars, space, derivative_data, indexmap, disc)
+    push!(state.equations, pde)
+    return nothing
 end
 ```
 
-## See Also
+The generic interface tests in PDEBase exercise the default methods and a
+minimal concrete dispatch using only these hooks. New discretizers should add a
+similar contract test for their concrete invariants.
 
-- [Discretization Workflow](@ref workflow) for the complete processing pipeline
-- [VariableMap](@ref variablemap) for understanding variable handling
-- [Boundary Conditions](@ref boundaries) for boundary condition types
+See the [Discretization Workflow](@ref workflow) for the data flow and the
+[VariableMap](@ref variablemap) and [Boundary Conditions](@ref boundaries)
+pages for the symbolic input structures.

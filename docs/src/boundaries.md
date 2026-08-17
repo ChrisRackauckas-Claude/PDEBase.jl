@@ -266,6 +266,6 @@ This is used to determine when to wrap grid indices in finite difference stencil
 
 ## See Also
 
-- [Developer Extension API](@ref developer-extension-api) for how boundaries integrate with discretization
+- [Developer Extension API](interface.md) for how boundaries integrate with discretization
 - [Discretization Workflow](@ref workflow) for the complete processing pipeline
 - [VariableMap](@ref variablemap) for variable handling

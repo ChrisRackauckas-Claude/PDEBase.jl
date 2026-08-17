@@ -148,7 +148,7 @@ Tracks which variables have periodic boundary conditions.
 
 ## Interface Functions
 
-For detailed documentation of interface functions, see [Developer Extension API](@ref developer-extension-api).
+For detailed documentation of interface functions, see [Developer Extension API](interface.md).
 
 ### Summary
 

@@ -1,5 +1,18 @@
 """
-A function that creates a tuple of CartesianIndices of unit length and `N` dimensions, one pointing along each dimension.
+    unitindices(N::Int)
+
+Create one unit `CartesianIndex` for each of the `N` dimensions.
+
+# Arguments
+- `N::Int`: The number of dimensions.
+
+# Returns
+- A vector of `CartesianIndex` values, or `CartesianIndex()` when `N == 0`.
+
+# Examples
+```julia
+unitindices(2) == [CartesianIndex(1, 0), CartesianIndex(0, 1)]
+```
 """
 function unitindices(N::Int) #create unit CartesianIndex for each dimension
     null = zeros(Int, N)
@@ -16,7 +29,15 @@ end
 
 """
     unitindex(N, j)
-Get a unit `CartesianIndex` in dimension `j` of length `N`.
+
+Create a unit `CartesianIndex` in dimension `j` of an `N`-dimensional index.
+
+# Arguments
+- `N`: The number of dimensions.
+- `j`: The dimension containing the unit entry.
+
+# Returns
+- `CartesianIndex`: An index with one in dimension `j` and zero elsewhere.
 """
 unitindex(N, j) = CartesianIndex(ntuple(i -> i == j, N))
 
@@ -30,6 +51,18 @@ remove(v::AbstractVector, a::Number) = filter(x -> !isequal(x, a), v)
 
 Return derivative orders with respect to independent variable `x` that appear
 in the PDE equations or boundary conditions `pdeeqs`.
+
+# Arguments
+- `x`: The independent variable to inspect.
+- `pdeeqs`: An iterable of `Equation` or `Pair` values.
+
+# Returns
+- A descending vector of unique derivative orders.
+
+# Examples
+```julia
+d_orders(x, [Dx(Dx(u)) ~ 0]) == [2]
+```
 """
 function d_orders(x, pdeeqs)
     # Handle both Equation (has lhs, rhs) and Pair (has first, second) types
