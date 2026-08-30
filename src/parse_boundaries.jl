@@ -417,15 +417,15 @@ function _boundary_rules(v, orders, u, x, val)
 
     spacerules = [
         (Differential(x)^d)(operation(u)(args...)) => [
-                operation(u)(args...), x, d,
-            ] for d in reverse(orders[x])
+            operation(u)(args...), x, d,
+        ] for d in reverse(orders[x])
     ]
 
     if v.time !== nothing && x !== v.time
         timerules = [
             Differential(v.time)(operation(u)(args...)) => [
-                    operation(u)(args...), x, d,
-                ] for d in reverse(orders[v.time])
+                operation(u)(args...), x, d,
+            ] for d in reverse(orders[v.time])
         ]
         return vcat(spacerules, timerules, varrule)
     else
@@ -442,26 +442,26 @@ function generate_boundary_matching_rules(v, orders)
     lower = Dict(
         [
             operation(u) => Dict(
-                    [
-                        x => _boundary_rules(
-                            v, orders, u, x, lowerboundary(x)
-                        )
+                [
+                    x => _boundary_rules(
+                        v, orders, u, x, lowerboundary(x)
+                    )
                         for x in all_ivs(u, v)
-                    ]
-                ) for u in v.ū
+                ]
+            ) for u in v.ū
         ]
     )
 
     upper = Dict(
         [
             operation(u) => Dict(
-                    [
-                        x => _boundary_rules(
-                            v, orders, u, x, upperboundary(x)
-                        )
+                [
+                    x => _boundary_rules(
+                        v, orders, u, x, upperboundary(x)
+                    )
                         for x in all_ivs(u, v)
-                    ]
-                ) for u in v.ū
+                ]
+            ) for u in v.ū
         ]
     )
 
