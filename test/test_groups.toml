@@ -1,6 +1,12 @@
 [Core]
 versions = ["lts", "1", "pre"]
 
+["Core 32-bit"]
+group = "Core"
+versions = ["1"]
+os = ["ubuntu-latest"]
+arch = "x86"
+
 [QA]
 # JET 0.11.x has `julia = "1.12"` registry compat (1.12.x only), so it cannot
 # resolve on Julia 1.13 prereleases. Keep QA off `pre` until upstream JET
