@@ -137,6 +137,7 @@ function generate_system(
                 initial_conditions = sys_defaults,
                 initialization_eqs = init_eqs,
                 guesses = guesses,
+                tspan = tspan,
                 name = name,
                 metadata = [ProblemTypeCtx => metadata], checks = checks
             )
