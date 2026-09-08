@@ -301,7 +301,9 @@ generate_metadata(s, discretization, pdesys, boundarymap, complexmap, u0 = []) =
 Build the final symbolic system from the accumulated discretization results.
 
 The returned value is passed back through `SciMLBase.symbolic_discretize`; in
-the usual time-dependent case it is a tuple `(system, tspan)`. Use `checks` when
+the usual time-dependent case it is a tuple `(system, tspan)`. Set `tspan` on the
+system as well, so that a caller who keeps only the system can still build a
+time-dependent problem without supplying a time span. Use `checks` when
 constructing the symbolic system and forward it to the constructor rather than
 silently changing validation behavior.
 
