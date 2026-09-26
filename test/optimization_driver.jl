@@ -92,7 +92,7 @@ end
     replacements = PDEBase.replaced_vars(result.space.varmap)
     @test length(replacements) == 2
     compat_sys, _ = PDEBase.make_pdesys_compatible(pdesys)
-    flat_eq = only(get_eqs(compat_sys))
+    flat_eq = only(ModelingToolkit.get_eqs(compat_sys))
     flat_lhs = Symbolics.unwrap(flat_eq.lhs)
     flat_rhs = Symbolics.unwrap(flat_eq.rhs)
     @test isequal(replacements[flat_lhs], u(x)[1])
