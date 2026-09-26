@@ -137,7 +137,8 @@ depvars(v::VariableMap) = v.ū
 Return the variable replacements made while normalizing array-valued dependent
 variables. The dictionary maps each flattened scalar variable to its original
 indexed variable, allowing discretizers to translate solution queries between
-the normalized and user-facing forms.
+the normalized and user-facing forms. The map is empty when no array-valued
+dependent variables are present.
 """
 replaced_vars(v::VariableMap) = v.replaced_vars
 

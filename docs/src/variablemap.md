@@ -104,8 +104,9 @@ depvars(v)  # Returns [u(t,x,y), v(t,x,y), ...]
 
 Returns the dictionary created when array-valued dependent variables are flattened.
 Each key is a normalized scalar variable and its value is the corresponding original
-indexed variable. Discretizer solution wrappers can reverse this correspondence to
-support user queries written with the original array variable.
+indexed variable. The map is empty when no array-valued dependent variables are
+present. Discretizer solution wrappers can reverse this correspondence to support
+user queries written with the original array variable.
 
 ### `indvars(v::VariableMap)`
 
