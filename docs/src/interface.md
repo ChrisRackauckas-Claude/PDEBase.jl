@@ -173,7 +173,7 @@ interface, a discretizer:
  2. defines `SciMLBase.PDETimeSeriesSolution(sol, metadata::D)` or
     `SciMLBase.PDENoTimeSolution(sol, metadata::D)` for its metadata type `D`, filling the
     fields above from the trained or integrated `sol`;
-3. extends `Base.getindex(sol::PDENoTimeSolution{T, N, S, D}, sym::Num)` (and the
+ 3. extends `Base.getindex(sol::PDENoTimeSolution{T, N, S, D}, sym::Num)` (and the
     time-series counterpart) to map dependent variables to `sol.u[sym]` and independent
     variables to their `ivdomain` entry, and the call
     `(sol::PDENoTimeSolution{T, N, S, D})(args...; dv = nothing)` for evaluation at
