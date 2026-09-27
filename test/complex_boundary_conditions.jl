@@ -76,6 +76,28 @@ using Test
         )
     end
 
+    @testset "Untyped complex conditions on a real equation are rejected" begin
+        real_pde = [Dt(ψ(t, x)) ~ Dxx(ψ(t, x))]
+        for bcs in (
+                [ψ(t, 0) ~ 0, Dx(ψ(t, 1)) ~ im * ψ(t, 1)],
+                [ψ(t, 0) ~ im * ψ(t, 1), ψ(t, 1) ~ 0],
+                [ψ(t, 0) ~ 0, Dx(ψ(t, 1)) ~ (1 + im) * ψ(t, 1)],
+                [ψ(t, 0) ~ 0, Dx(ψ(t, 1)) ~ im * conj(ψ(t, 1))],
+            )
+            @test_throws ArgumentError split(real_pde, bcs)
+        end
+    end
+
+    @testset "Nested pair with a zero left-hand side is rejected" begin
+        @variables u(..)
+        system = PDESystem(
+            [Dt(u(t, x)) ~ Dxx(u(t, x))],
+            [u(0, x) ~ 0, [u(t, 0) ~ 1, 0 ~ Dx(u(t, 0))], u(t, 1) ~ 0],
+            domain, [t, x], [u(t, x)]; name = :zero_lhs_pair_test
+        )
+        @test_throws ArgumentError PDEBase.handle_complex(system)
+    end
+
     @testset "Typed complex Dirichlet conditions split exactly" begin
         system = split_typed(
             [im * Dt(ψc(t, x)) ~ Dxx(ψc(t, x))],
@@ -102,6 +124,82 @@ using Test
             Imψc(t, 1) ~ 0,
         ]
         @test same_equations(PDEBase.get_bcs(system), expected)
+    end
+
+    @testset "Marked complex boundary conditions preserve coupling" begin
+        marked = Symbolics.split_complex_equation(
+            ψ(t, 0), cos(t) + im * sin(t)
+        )
+        @test marked isa Symbolics.SplitComplexEquation
+
+        system = split(
+            [im * Dt(ψ(t, x)) ~ Dxx(ψ(t, x))],
+            [marked, ψ(t, 1) ~ 0]
+        )
+        expected = [
+            Reψ(t, 0) ~ cos(t),
+            Imψ(t, 0) ~ sin(t),
+            Reψ(t, 1) ~ 0,
+            Imψ(t, 1) ~ 0,
+        ]
+        @test same_equations(PDEBase.get_bcs(system), expected)
+
+        marked_neumann = Symbolics.split_complex_equation(
+            Dx(ψ(t, 1)), im * ψ(t, 1)
+        )
+        @test marked_neumann isa Symbolics.SplitComplexEquation
+        system = split(
+            [im * Dt(ψ(t, x)) ~ Dxx(ψ(t, x))],
+            [ψ(t, 0) ~ 0, marked_neumann]
+        )
+        expected = [
+            Reψ(t, 0) ~ 0,
+            Imψ(t, 0) ~ 0,
+            Dx(Reψ(t, 1)) ~ -Imψ(t, 1),
+            Dx(Imψ(t, 1)) ~ Reψ(t, 1),
+        ]
+        @test same_equations(PDEBase.get_bcs(system), expected)
+
+        system = split(
+            [Dt(ψ(t, x)) ~ Dxx(ψ(t, x))],
+            [marked, ψ(t, 1) ~ 0]
+        )
+        @test same_equations(
+            PDEBase.get_bcs(system), [
+                Reψ(t, 0) ~ cos(t),
+                Imψ(t, 0) ~ sin(t),
+                Reψ(t, 1) ~ 0,
+                Imψ(t, 1) ~ 0,
+            ]
+        )
+
+        marked_typed = Symbolics.split_complex_equation(
+            ψc(t, 0), cos(t) + im * sin(t)
+        )
+        @test marked_typed isa Symbolics.SplitComplexEquation
+        system = split_typed(
+            [im * Dt(ψc(t, x)) ~ Dxx(ψc(t, x))],
+            [marked_typed, ψc(t, 1) ~ 0]
+        )
+        @test same_equations(
+            PDEBase.get_bcs(system), [
+                Reψc(t, 0) ~ cos(t),
+                Imψc(t, 0) ~ sin(t),
+                Reψc(t, 1) ~ 0,
+                Imψc(t, 1) ~ 0,
+            ]
+        )
+    end
+
+    @testset "Hand-written real boundary pair keeps existing handling" begin
+        manual_pair = [
+            real(ψ(t, 0)) ~ cos(t),
+            imag(ψ(t, 0)) ~ sin(t),
+        ]
+        @test_throws ArgumentError split(
+            [im * Dt(ψ(t, x)) ~ Dxx(ψ(t, x))],
+            [manual_pair, ψ(t, 1) ~ 0]
+        )
     end
 
     @testset "Nested real boundary conditions stay independent" begin

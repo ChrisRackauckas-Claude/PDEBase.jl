@@ -11,6 +11,12 @@ function _replace_ops(term, op_map)
     if iscall(term_unwrapped)
         old_op = operation(term_unwrapped)
         args = arguments(term_unwrapped)
+        if old_op === complex && length(args) == 2
+            # `complex(re, im)` only accepts Real-typed arguments, so a
+            # substitution that makes an argument complex cannot rebuild the
+            # term; `complex(a, b)` is `a + b*im` arithmetic.
+            return _replace_ops(args[1], op_map) + im * _replace_ops(args[2], op_map)
+        end
         new_args = [_replace_ops(a, op_map) for a in args]
         if haskey(op_map, old_op)
             new_op = op_map[old_op]
@@ -200,22 +206,17 @@ end
 _is_zero_constant(term) = isequal(unwrap_const(safe_unwrap(term)), 0)
 
 # Symbolics rewrites a complex `lhs ~ rhs` over real-typed variables to
-# `[real(lhs) ~ real(rhs), imag(lhs) ~ imag(rhs)]`. Users can write the same
-# nested shape to group real boundary conditions per boundary point, so a pair
-# is only a definite pre-split signature when one side is `0 ~ expr` over an
-# expression without dependent variables: such an equation constrains no
-# unknown and is never a usable real boundary condition.
+# `[real(lhs) ~ real(rhs), imag(lhs) ~ imag(rhs)]`; for a real-typed `lhs` the
+# imaginary half always has a literal `0` left-hand side. A `0 ~ expr` member
+# of a nested pair constrains no unknown, so it is a pre-split signature
+# rather than a usable real boundary condition — including when it is the
+# shape a user's grouped pair happens to take.
 function _is_presplit_bc_candidate(eq1, eq2, dependent_operations, complex_evidence)
-    first_instances = _dependent_variable_instances!(Any[], eq1.lhs, dependent_operations)
-    append!(first_instances, _dependent_variable_instances!(Any[], eq1.rhs, dependent_operations))
-    second_instances = _dependent_variable_instances!(Any[], eq2.lhs, dependent_operations)
-    append!(second_instances, _dependent_variable_instances!(Any[], eq2.rhs, dependent_operations))
-    (isempty(second_instances) && _is_zero_constant(eq2.lhs) && !_is_zero_constant(eq2.rhs)) && return true
-    (isempty(first_instances) && _is_zero_constant(eq1.lhs) && !_is_zero_constant(eq1.rhs)) && return true
+    (_is_zero_constant(eq1.lhs) || _is_zero_constant(eq2.lhs)) && return true
+    # Without a `0 ~` member a nested pair can equally be user grouping, so
+    # only flag it when the system already shows complex values.
     complex_evidence || return false
-    _same_dependent_variable_instances(eq1, eq2, dependent_operations) && return true
-    return (isempty(first_instances) && _is_zero_constant(eq1.lhs) && !isempty(second_instances)) ||
-        (isempty(second_instances) && _is_zero_constant(eq2.lhs) && !isempty(first_instances))
+    return _same_dependent_variable_instances(eq1, eq2, dependent_operations)
 end
 
 function _ambiguous_presplit_bc(bcs, dependent_operations, complex_evidence)
@@ -230,6 +231,14 @@ function _ambiguous_presplit_bc(bcs, dependent_operations, complex_evidence)
     end
     return false
 end
+
+# A `Symbolics.SplitComplexEquation` records that its two equations came from
+# splitting one complex `~` and keeps the original equation, so restoring it
+# routes the condition through the coupled split instead of the ambiguous-pair
+# checks that a hand-written or plain `~` pair still receives.
+_restore_marked_complex_eq(eq::Symbolics.SplitComplexEquation) = eq.original
+_restore_marked_complex_eq(bcs::AbstractVector) = map(_restore_marked_complex_eq, bcs)
+_restore_marked_complex_eq(bc) = bc
 
 function split_complex_eq(eq, redvmaps, imdvmaps; expand_derivatives = true)
     lhs, rhs = if eq isa AbstractVector
@@ -272,7 +281,10 @@ function split_complex_bc(eq, redvmaps, imdvmaps)
         return [eq1, eq2]
     end
 
-    return split_complex_eq(eq, redvmaps, imdvmaps)
+    # Boundary conditions are evaluated at points, where expand_derivatives
+    # reduces `Differential(x)(f(t, 1))` to 0 because the boundary argument
+    # does not contain x; preserve differentials instead of expanding them.
+    return split_complex_eq(eq, redvmaps, imdvmaps; expand_derivatives = false)
 end
 
 function handle_complex(pdesys)
@@ -288,6 +300,13 @@ function handle_complex(pdesys)
         throw(ArgumentError("Complex-typed and real dependent variables cannot be mixed in handle_complex"))
     end
     typed_dvs = !isempty(dvs) && all(complex_typed)
+    # A `SplitComplexEquation` marker in the boundary conditions is restored to
+    # the complex equation it was split from, so it is split below with its
+    # real and imaginary parts coupled. Typed fields do not need the marker:
+    # their real(ψ)/imag(ψ) parts survive `~` and rename directly.
+    if !typed_dvs
+        bcs = _restore_marked_complex_eq(bcs)
+    end
     # In MTK v11, complex equations may already be nested Vector{Equation}
     # Flatten first before processing
     eqs_flat = _flatten_eqs(eqs)
@@ -298,8 +317,11 @@ function handle_complex(pdesys)
     if !typed_dvs && _ambiguous_presplit_bc(bcs, dependent_operations, eqs_have_complex || bcs_have_complex)
         throw(
             ArgumentError(
-                "Symbolics has pre-split a complex boundary condition before PDEBase can verify its meaning. " *
-                    "Declare the dependent variable as `::Complex` to preserve complex boundary expressions."
+                "Symbolics has pre-split a complex boundary condition before PDEBase can verify its meaning, " *
+                    "or a `0 ~` condition was nested inside a boundary group. Declare the dependent " *
+                    "variable as `::Complex` or build the condition with " *
+                    "`Symbolics.split_complex_equation` to preserve complex boundary expressions; " *
+                    "if these are real boundary conditions, pass them un-nested."
             )
         )
     end

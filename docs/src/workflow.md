@@ -34,6 +34,12 @@ constructs the equations, which can simplify those expressions too early.
 In particular, a numeric complex literal on an untyped field loses its
 imaginary part before PDEBase sees it: `ψ(t, 0) ~ 2im` becomes `ψ(t, 0) ~ 0`,
 and `ψ(t, 0) ~ 1 + 2im` becomes `ψ(t, 0) ~ 1`.
+An untyped field can opt a single boundary condition into coupled splitting by
+building it with `Symbolics.split_complex_equation`, which marks the pair as a
+complex split (`Symbolics.SplitComplexEquation`) and keeps the original
+equation; a plain complex `~` and a hand-written `real`/`imag` pair are
+indistinguishable from grouped real conditions and are rejected when the
+system contains complex values.
 Currently, a `PDESystem` cannot mix complex-typed fields with real or untyped
 dependent variables; `handle_complex` raises an error for that combination.
 
