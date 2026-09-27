@@ -127,10 +127,6 @@ function _split_complex_components(term, preserve_differentials = false)
         if constant_arg isa Number
             return 0, 0
         end
-        try
-            Symbolics.value(constant_arg) isa Number && return 0, 0
-        catch
-        end
         re, im = _split_complex_components(arg, preserve_differentials)
         return op(re), op(im)
     end
@@ -176,11 +172,7 @@ function _split_complex_components(term, preserve_differentials = false)
     return real(term), imag(term)
 end
 
-function _is_false_constant(term)
-    term = unwrap_const(safe_unwrap(term))
-    term === false && return true
-    return false
-end
+_is_false_constant(term) = unwrap_const(safe_unwrap(term)) === false
 
 function _dependent_variable_instances!(found, term, dependent_operations)
     term = safe_unwrap(term)
@@ -205,25 +197,71 @@ end
 
 _is_zero_constant(term) = isequal(unwrap_const(safe_unwrap(term)), 0)
 
-# Symbolics rewrites a complex `lhs ~ rhs` over real-typed variables to
-# `[real(lhs) ~ real(rhs), imag(lhs) ~ imag(rhs)]`; for a real-typed `lhs` the
-# imaginary half always has a literal `0` left-hand side. A `0 ~ expr` member
-# of a nested pair constrains no unknown, so it is a pre-split signature
-# rather than a usable real boundary condition — including when it is the
-# shape a user's grouped pair happens to take.
-function _is_presplit_bc_candidate(eq1, eq2, dependent_operations, complex_evidence)
-    (_is_zero_constant(eq1.lhs) || _is_zero_constant(eq2.lhs)) && return true
-    # Without a `0 ~` member a nested pair can equally be user grouping, so
-    # only flag it when the system already shows complex values.
-    complex_evidence || return false
-    return _same_dependent_variable_instances(eq1, eq2, dependent_operations)
+function _dv_application(term, dependent_operations)
+    term = safe_unwrap(term)
+    iscall(term) || return false
+    op = operation(term)
+    if op isa Differential
+        arg = safe_unwrap(first(arguments(term)))
+        return iscall(arg) &&
+            any(o -> isequal(operation(arg), o), dependent_operations)
+    end
+    return any(o -> isequal(op, o), dependent_operations)
 end
 
+_dv_free(term, dependent_operations) =
+    isempty(_dependent_variable_instances!(Any[], term, dependent_operations))
+
+_presplit_bc_error() = ArgumentError(
+    "Symbolics has pre-split a complex boundary condition before PDEBase can verify its meaning, " *
+        "or a `0 ~` condition was nested inside a boundary group. Declare the dependent " *
+        "variable as `::Complex` or build the condition with " *
+        "`Symbolics.split_complex_equation` to preserve complex boundary expressions; " *
+        "if these are real boundary conditions, pass them un-nested."
+)
+
+# Symbolics rewrites a complex `lhs ~ rhs` over real-typed variables to
+# `[real(lhs) ~ real(rhs), imag(lhs) ~ imag(rhs)]`; for a real-typed `lhs`
+# the imaginary half carries a literal `0` left-hand side. A nested pair
+# `[L ~ a, 0 ~ b]` where `L` is a single dependent-variable application,
+# possibly under a `Differential`, and neither `a` nor `b` mentions a
+# dependent variable can only have come from splitting `L(ψ) ~ a + i b` — as
+# a real grouping `0 ~ b` constrains no unknown — so it is rebuilt as that
+# equation. A pair whose members both have a `0 ~` left-hand side means the
+# same whether it is a real grouping or a `0 ~` complex split, so it passes
+# through. Any other nested pair containing a `0 ~` member is rejected:
+# dependent-variable data behind the `0 ~` (the pre-split of e.g.
+# `L ~ i*ψ(t, 0)`) couples the fields in a way this shape does not record.
+function _resolve_presplit_bc_pairs(bcs, dependent_operations)
+    return map(bcs) do bc
+        bc isa AbstractVector || return bc
+        if length(bc) == 2 && all(eq -> eq isa Equation, bc)
+            eq1, eq2 = bc
+            zero_lhs1 = _is_zero_constant(eq1.lhs)
+            zero_lhs2 = _is_zero_constant(eq2.lhs)
+            if zero_lhs1 && zero_lhs2
+                return bc
+            elseif zero_lhs2 && _dv_application(eq1.lhs, dependent_operations) &&
+                    _dv_free(eq1.rhs, dependent_operations) &&
+                    _dv_free(eq2.rhs, dependent_operations)
+                return Equation(eq1.lhs, eq1.rhs + im * eq2.rhs)
+            elseif zero_lhs1 || zero_lhs2
+                throw(_presplit_bc_error())
+            end
+            return bc
+        end
+        return _resolve_presplit_bc_pairs(bc, dependent_operations)
+    end
+end
+
+# Without a `0 ~` member a nested pair can equally be user grouping, so it is
+# only flagged when the system already shows complex values.
 function _ambiguous_presplit_bc(bcs, dependent_operations, complex_evidence)
+    complex_evidence || return false
     for bc in bcs
         if bc isa AbstractVector
             if length(bc) == 2 && all(eq -> eq isa Equation, bc) &&
-                    _is_presplit_bc_candidate(bc[1], bc[2], dependent_operations, complex_evidence)
+                    _same_dependent_variable_instances(bc[1], bc[2], dependent_operations)
                 return true
             end
             _ambiguous_presplit_bc(bc, dependent_operations, complex_evidence) && return true
@@ -300,30 +338,23 @@ function handle_complex(pdesys)
         throw(ArgumentError("Complex-typed and real dependent variables cannot be mixed in handle_complex"))
     end
     typed_dvs = !isempty(dvs) && all(complex_typed)
+    dependent_operations = map(dv -> operation(_dependent_variable_term(dv)), get_dvs(pdesys))
     # A `SplitComplexEquation` marker in the boundary conditions is restored to
     # the complex equation it was split from, so it is split below with its
     # real and imaginary parts coupled. Typed fields do not need the marker:
     # their real(ψ)/imag(ψ) parts survive `~` and rename directly.
     if !typed_dvs
         bcs = _restore_marked_complex_eq(bcs)
+        bcs = _resolve_presplit_bc_pairs(bcs, dependent_operations)
     end
     # In MTK v11, complex equations may already be nested Vector{Equation}
     # Flatten first before processing
     eqs_flat = _flatten_eqs(eqs)
-    dependent_operations = map(dv -> operation(_dependent_variable_term(dv)), get_dvs(pdesys))
     eqs_have_complex = any(eq -> hascomplex(eq), eqs_flat) || any(eq -> eq isa AbstractVector, eqs)
     bcs_flat = _flatten_bcs(bcs)
     bcs_have_complex = any(bc -> hascomplex(bc), bcs_flat)
     if !typed_dvs && _ambiguous_presplit_bc(bcs, dependent_operations, eqs_have_complex || bcs_have_complex)
-        throw(
-            ArgumentError(
-                "Symbolics has pre-split a complex boundary condition before PDEBase can verify its meaning, " *
-                    "or a `0 ~` condition was nested inside a boundary group. Declare the dependent " *
-                    "variable as `::Complex` or build the condition with " *
-                    "`Symbolics.split_complex_equation` to preserve complex boundary expressions; " *
-                    "if these are real boundary conditions, pass them un-nested."
-            )
-        )
+        throw(_presplit_bc_error())
     end
 
     if !typed_dvs && any(bc -> bc isa Equation && (_is_false_constant(bc.lhs) || _is_false_constant(bc.rhs)), bcs_flat)

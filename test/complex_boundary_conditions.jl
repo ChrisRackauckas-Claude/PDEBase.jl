@@ -65,14 +65,88 @@ using Test
         )
     end
 
-    @testset "Untyped pre-split complex Dirichlet condition is rejected" begin
-        @test_throws ArgumentError split(
+    @testset "Untyped pre-split complex Dirichlet condition splits exactly" begin
+        # `ψ(t, 0) ~ cos(t) + im*sin(t)` on an untyped field reaches PDEBase as
+        # the pre-split pair `[ψ(t, 0) ~ cos(t), 0 ~ sin(t)]`.
+        expected = [
+            Reψ(t, 0) ~ cos(t),
+            Imψ(t, 0) ~ sin(t),
+            Reψ(t, 1) ~ 0,
+            Imψ(t, 1) ~ 0,
+        ]
+        system = split(
             [im * Dt(ψ(t, x)) ~ Dxx(ψ(t, x))],
             [ψ(t, 0) ~ cos(t) + im * sin(t), ψ(t, 1) ~ 0]
         )
-        @test_throws ArgumentError split(
+        @test same_equations(PDEBase.get_bcs(system), expected)
+        system = split(
             [Dt(ψ(t, x)) ~ Dxx(ψ(t, x))],
             [ψ(t, 0) ~ cos(t) + im * sin(t), ψ(t, 1) ~ 0]
+        )
+        @test same_equations(PDEBase.get_bcs(system), expected)
+    end
+
+    @testset "Untyped exp(im*…) Dirichlet conditions with a complex IC split exactly" begin
+        # The MethodOfLines "Schroedinger with complex bcs" shape: a complex
+        # initial-condition Pair plus untyped `exp(im …)` Dirichlet data.
+        exp0 = SymbolicUtils.term(exp, 0.0)
+        system = split(
+            [(im * 1.0e-2) * Dt(ψ(t, x)) ~ (-0.5 * 1.0e-4) * Dxx(ψ(t, x))],
+            [
+                ψ(0, x) => exp((im / 1.0e-2) * 0.1 * x),
+                ψ(t, 0) ~ exp((im / 1.0e-2) * (0.0 - 0.5e-2 * t)),
+                ψ(t, 1) ~ exp((im / 1.0e-2) * (0.1 - 0.5e-2 * t)),
+            ]
+        )
+        expected = [
+            Reψ(0, x) ~ exp0 * cos(10.0x),
+            Imψ(0, x) ~ exp0 * sin(10.0x),
+            Reψ(t, 0) ~ exp0 * cos(-0.5t),
+            Imψ(t, 0) ~ exp0 * sin(-0.5t),
+            Reψ(t, 1) ~ exp0 * cos(10.0 - 0.5t),
+            Imψ(t, 1) ~ exp0 * sin(10.0 - 0.5t),
+        ]
+        @test same_equations(PDEBase.get_bcs(system), expected)
+    end
+
+    @testset "Pre-split pair with dependent-variable data is rejected" begin
+        # `Dx(ψ(t, 1)) ~ im*ψ(t, 1)` pre-splits to `[Dx(ψ) ~ 0, 0 ~ ψ]`: the
+        # `0 ~` side carries a dependent variable, so no unique reconstruction
+        # exists and the pair is rejected.
+        @test_throws ArgumentError split(
+            [im * Dt(ψ(t, x)) ~ Dxx(ψ(t, x))],
+            [ψ(t, 0) ~ 0, Dx(ψ(t, 1)) ~ im * ψ(t, 1)]
+        )
+        @test_throws ArgumentError split(
+            [im * Dt(ψ(t, x)) ~ Dxx(ψ(t, x))],
+            [[0 ~ sin(t), ψ(t, 0) ~ 1], ψ(t, 1) ~ 0]
+        )
+    end
+
+    @testset "Nested pair of `0 ~` boundary conditions stays real" begin
+        @variables u(..)
+        system = PDESystem(
+            [Dt(u(t, x)) ~ Dxx(u(t, x))],
+            [u(0, x) ~ 0, [0 ~ u(t, 0) - sin(t), 0 ~ u(t, 1)]],
+            domain, [t, x], [u(t, x)]; name = :zero_lhs_real_pair_test
+        )
+        normalized, complexmap = PDEBase.handle_complex(system)
+        @test complexmap === nothing
+        @test same_equations(
+            PDEBase.get_bcs(normalized),
+            [u(0, x) ~ 0, 0 ~ u(t, 0) - sin(t), 0 ~ u(t, 1)]
+        )
+
+        broadcast_system = PDESystem(
+            [Dt(u(t, x)) ~ Dxx(u(t, x))],
+            [u(0, x) ~ sin(x), 0 .~ Dx.(u.(t, [0, 1]))],
+            domain, [t, x], [u(t, x)]; name = :zero_lhs_broadcast_test
+        )
+        normalized, complexmap = PDEBase.handle_complex(broadcast_system)
+        @test complexmap === nothing
+        @test same_equations(
+            PDEBase.get_bcs(normalized),
+            [u(0, x) ~ sin(x), 0 ~ Dx(u(t, 0)), 0 ~ Dx(u(t, 1))]
         )
     end
 
@@ -191,14 +265,22 @@ using Test
         )
     end
 
-    @testset "Hand-written real boundary pair keeps existing handling" begin
+    @testset "Hand-written real/imag pair reads as its complex equivalent" begin
+        # On an untyped field `real(ψ)` and `imag(ψ)` simplify to `ψ` and `0`,
+        # so a hand-written `real`/`imag` pair arrives in the same shape as a
+        # Symbolics pre-split of `ψ(t, 0) ~ cos(t) + im*sin(t)` and splits the
+        # same way.
         manual_pair = [
             real(ψ(t, 0)) ~ cos(t),
             imag(ψ(t, 0)) ~ sin(t),
         ]
-        @test_throws ArgumentError split(
+        system = split(
             [im * Dt(ψ(t, x)) ~ Dxx(ψ(t, x))],
             [manual_pair, ψ(t, 1) ~ 0]
+        )
+        @test same_equations(
+            PDEBase.get_bcs(system),
+            [Reψ(t, 0) ~ cos(t), Imψ(t, 0) ~ sin(t), Reψ(t, 1) ~ 0, Imψ(t, 1) ~ 0]
         )
     end
 
@@ -298,6 +380,31 @@ using Test
             [im * Dt(ψ(t, x)) ~ Dxx(ψ(t, x))],
             [ψ(t, 0) ~ 0, Dx(ψ(t, 1)) ~ im * conj(ψ(t, 1))]
         )
+    end
+
+    @testset "Typed non-holomorphic boundary conditions split exactly" begin
+        # conj/real/imag of an untyped field simplify before any marker is
+        # built, so non-holomorphic conditions require a `::Complex` field.
+        system = split_typed(
+            [im * Dt(ψc(t, x)) ~ Dxx(ψc(t, x))],
+            [ψc(t, 0) ~ 0, Dx(ψc(t, 1)) ~ im * conj(ψc(t, 1))]
+        )
+        expected = [
+            Reψc(t, 0) ~ 0,
+            Imψc(t, 0) ~ 0,
+            Dx(Reψc(t, 1)) ~ Imψc(t, 1),
+            Dx(Imψc(t, 1)) ~ Reψc(t, 1),
+        ]
+        @test same_equations(PDEBase.get_bcs(system), expected)
+    end
+
+    @testset "Numeric complex data truncates with or without the marker" begin
+        # split_complex_equation(ψ, 2im) returns a plain Equation, so the
+        # imaginary part of numeric constant data is dropped exactly as with
+        # `~`.
+        @test Symbolics.split_complex_equation(ψ(t, 0), 2im) isa Equation
+        @test isequal(Symbolics.split_complex_equation(ψ(t, 0), 2im), ψ(t, 0) ~ 0)
+        @test isequal(Symbolics.split_complex_equation(ψ(t, 0), 1 + 2im), ψ(t, 0) ~ 1)
     end
 
     @testset "Truncated complex literal on the left is rejected" begin

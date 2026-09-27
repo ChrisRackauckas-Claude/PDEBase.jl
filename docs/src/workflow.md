@@ -34,12 +34,26 @@ constructs the equations, which can simplify those expressions too early.
 In particular, a numeric complex literal on an untyped field loses its
 imaginary part before PDEBase sees it: `ψ(t, 0) ~ 2im` becomes `ψ(t, 0) ~ 0`,
 and `ψ(t, 0) ~ 1 + 2im` becomes `ψ(t, 0) ~ 1`.
-An untyped field can opt a single boundary condition into coupled splitting by
-building it with `Symbolics.split_complex_equation`, which marks the pair as a
-complex split (`Symbolics.SplitComplexEquation`) and keeps the original
-equation; a plain complex `~` and a hand-written `real`/`imag` pair are
-indistinguishable from grouped real conditions and are rejected when the
-system contains complex values.
+`Symbolics.split_complex_equation` truncates the same way for purely numeric
+data, since it keeps only what `~` would have produced.
+
+A complex boundary condition written with a plain `~` on an untyped field is
+already split into a real and an imaginary equation when PDEBase sees it. When
+the resulting pair is unambiguous — `[L ~ a, 0 ~ b]` with `L` a dependent
+variable instance or a `Differential` of one and neither `a` nor `b`
+mentioning a dependent variable — `handle_complex` reads it as
+`L(ψ) ~ a + i b` and splits it into `L(Reψ) ~ a` and `L(Imψ) ~ b`. Pairs that
+could equally be a real grouping, such as `0 ~` data that still mentions a
+dependent variable or a hand-written `real`/`imag` pair on a system containing
+complex values, are rejected with an `ArgumentError`.
+
+An untyped field can also opt a single boundary condition into coupled
+splitting by building it with `Symbolics.split_complex_equation`, which marks
+the pair as a complex split (`Symbolics.SplitComplexEquation`) and keeps the
+original equation. The marker is only valid for conditions that are
+holomorphic — polynomial or analytic — in the field: `conj`, `real`, `imag`,
+`abs` and `abs2` of an untyped field are simplified as real before the marker
+is built, so such conditions must be declared on a `::Complex` field.
 Currently, a `PDESystem` cannot mix complex-typed fields with real or untyped
 dependent variables; `handle_complex` raises an error for that combination.
 
