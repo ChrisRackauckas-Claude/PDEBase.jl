@@ -42,10 +42,18 @@ already split into a real and an imaginary equation when PDEBase sees it. When
 the resulting pair is unambiguous — `[L ~ a, 0 ~ b]` with `L` a dependent
 variable instance or a `Differential` of one and neither `a` nor `b`
 mentioning a dependent variable — `handle_complex` reads it as
-`L(ψ) ~ a + i b` and splits it into `L(Reψ) ~ a` and `L(Imψ) ~ b`. Pairs that
-could equally be a real grouping, such as `0 ~` data that still mentions a
-dependent variable or a hand-written `real`/`imag` pair on a system containing
-complex values, are rejected with an `ArgumentError`.
+`L(ψ) ~ a + i b` and splits it into `L(Reψ) ~ a` and `L(Imψ) ~ b`. The same
+applies to a residual-form condition `0 ~ f(ψ)` such as
+`0 ~ ψ(t, 0) - exp(im*t)`, which pre-splits to a `[0 ~ a, 0 ~ b]` pair: when
+exactly one member is free of dependent variables the pair is read as
+`0 ~ a + i b`, while a pair whose members both mention a dependent variable
+stays a real grouping. Write complex conditions with the field on the left,
+as `ψ(t, 0) ~ exp(im*t)` or the `0 ~` residual form — a reversed
+`exp(im*t) ~ ψ(t, 0)` pre-splits to a shape that cannot be reconstructed and
+splits incorrectly without an error. Pairs that could equally be a real
+grouping, such as `0 ~` data that still mentions a dependent variable or a
+hand-written `real`/`imag` pair on a system containing complex values, are
+rejected with an `ArgumentError`.
 
 An untyped field can also opt a single boundary condition into coupled
 splitting by building it with `Symbolics.split_complex_equation`, which marks

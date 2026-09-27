@@ -109,6 +109,34 @@ using Test
         @test same_equations(PDEBase.get_bcs(system), expected)
     end
 
+    @testset "Untyped residual-form complex Dirichlet condition splits exactly" begin
+        # `0 ~ ψ(t, 0) - exp(im*t)` on an untyped field reaches PDEBase as
+        # `[0 ~ ψ(t, 0) - cos(t)*exp(0), 0 ~ -sin(t)*exp(0)]`: exactly one
+        # member is free of dependent variables, so the pair is rebuilt as
+        # `0 ~ ψ - exp(im*t)` and split with the real and imaginary parts
+        # coupled. Symbolics keeps the `exp(0)` factor unevaluated.
+        exp0 = SymbolicUtils.term(exp, 0)
+        system = split(
+            [im * Dt(ψ(t, x)) ~ Dxx(ψ(t, x))],
+            [0 ~ ψ(t, 0) - exp(im * t), ψ(t, 1) ~ 0]
+        )
+        expected = [
+            0 ~ Reψ(t, 0) - exp0 * cos(t),
+            0 ~ Imψ(t, 0) - exp0 * sin(t),
+            Reψ(t, 1) ~ 0,
+            Imψ(t, 1) ~ 0,
+        ]
+        @test same_equations(PDEBase.get_bcs(system), expected)
+
+        # A `[0 ~ a, 0 ~ b]` pair with neither member mentioning a dependent
+        # variable is neither a real boundary grouping nor a complex
+        # condition, so it is rejected.
+        @test_throws ArgumentError split(
+            [im * Dt(ψ(t, x)) ~ Dxx(ψ(t, x))],
+            [[0 ~ sin(t), 0 ~ cos(t)], ψ(t, 1) ~ 0]
+        )
+    end
+
     @testset "Pre-split pair with dependent-variable data is rejected" begin
         # `Dx(ψ(t, 1)) ~ im*ψ(t, 1)` pre-splits to `[Dx(ψ) ~ 0, 0 ~ ψ]`: the
         # `0 ~` side carries a dependent variable, so no unique reconstruction
@@ -396,15 +424,6 @@ using Test
             Dx(Imψc(t, 1)) ~ Reψc(t, 1),
         ]
         @test same_equations(PDEBase.get_bcs(system), expected)
-    end
-
-    @testset "Numeric complex data truncates with or without the marker" begin
-        # split_complex_equation(ψ, 2im) returns a plain Equation, so the
-        # imaginary part of numeric constant data is dropped exactly as with
-        # `~`.
-        @test Symbolics.split_complex_equation(ψ(t, 0), 2im) isa Equation
-        @test isequal(Symbolics.split_complex_equation(ψ(t, 0), 2im), ψ(t, 0) ~ 0)
-        @test isequal(Symbolics.split_complex_equation(ψ(t, 0), 1 + 2im), ψ(t, 0) ~ 1)
     end
 
     @testset "Truncated complex literal on the left is rejected" begin

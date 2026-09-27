@@ -227,11 +227,15 @@ _presplit_bc_error() = ArgumentError(
 # possibly under a `Differential`, and neither `a` nor `b` mentions a
 # dependent variable can only have come from splitting `L(ψ) ~ a + i b` — as
 # a real grouping `0 ~ b` constrains no unknown — so it is rebuilt as that
-# equation. A pair whose members both have a `0 ~` left-hand side means the
-# same whether it is a real grouping or a `0 ~` complex split, so it passes
-# through. Any other nested pair containing a `0 ~` member is rejected:
-# dependent-variable data behind the `0 ~` (the pre-split of e.g.
-# `L ~ i*ψ(t, 0)`) couples the fields in a way this shape does not record.
+# equation. A `[0 ~ a, 0 ~ b]` pair is a real grouping when both members
+# mention a dependent variable, and the split of a residual-form complex
+# condition (`0 ~ ψ(t, 0) - exp(im*t)` pre-splits to `[0 ~ ψ - cos(t),
+# 0 ~ -sin(t)]`) when exactly one member is free of dependent variables —
+# as a real grouping such a member constrains no unknown — so it is rebuilt
+# as `0 ~ a + i b` and split downstream. Any other nested pair containing a
+# `0 ~` member is rejected: dependent-variable data behind the `0 ~` (the
+# pre-split of e.g. `L ~ i*ψ(t, 0)`) couples the fields in a way this shape
+# does not record.
 function _resolve_presplit_bc_pairs(bcs, dependent_operations)
     return map(bcs) do bc
         bc isa AbstractVector || return bc
@@ -240,6 +244,12 @@ function _resolve_presplit_bc_pairs(bcs, dependent_operations)
             zero_lhs1 = _is_zero_constant(eq1.lhs)
             zero_lhs2 = _is_zero_constant(eq2.lhs)
             if zero_lhs1 && zero_lhs2
+                free1 = _dv_free(eq1.rhs, dependent_operations)
+                free2 = _dv_free(eq2.rhs, dependent_operations)
+                if free1 ⊻ free2
+                    return Equation(0, eq1.rhs + im * eq2.rhs)
+                end
+                free1 && free2 && throw(_presplit_bc_error())
                 return bc
             elseif zero_lhs2 && _dv_application(eq1.lhs, dependent_operations) &&
                     _dv_free(eq1.rhs, dependent_operations) &&
